@@ -1,0 +1,15 @@
+server:
+  port: 8089
+
+spring:
+  application:
+    name: wchat
+  data:
+    redis:
+      host: localhost
+      port: 16379
+
+# Bot 시스템 API 설정 (예시 URL)
+bot:
+  api:
+    url: "http://external-bot-service/api/ask"

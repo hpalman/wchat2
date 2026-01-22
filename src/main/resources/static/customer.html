@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <title>WCHAT - 고객용</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <!--<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>-->
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.js"></script>
+</head>
+<body>
+    <h2>고객 채팅창</h2>
+    <div id="loginArea">
+        <input type="text" id="userId" placeholder="사용자 아이디 입력">
+        <button onclick="connect()">채팅 접속</button>
+    </div>
+    <hr>
+    <div id="chatArea" style="height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; background: #fafafa;"></div>
+    <input type="text" id="message" style="width: 70%;" placeholder="메시지를 입력하세요..." onkeypress="if(event.keyCode==13) sendMessage()">
+    <button onclick="sendMessage()">전송</button>
+    <button id="callAgentBtn" onclick="callAgent()" style="color: red; font-weight: bold;">상담사 연결 요청</button>
+
+    <script>
+        let stompClient = null;
+        let isBotMode = true;
+        let currentSubscription = null; // 중복 구독 방지를 위한 변수
+
+        function connect() {
+            const userId = document.getElementById('userId').value;
+            if(!userId) {
+                alert("아이디를 입력해주세요.");
+                return;
+            }
+
+            // 이미 연결되어 있다면 연결을 끊고 새로 시작 (중복 방지 핵심)
+            if (stompClient !== null) {
+                stompClient.disconnect();
+            }
+
+            const socket = new SockJS('/ws-chat');
+            stompClient = Stomp.over(socket);
+
+            stompClient.connect({}, function (frame) {
+				console.log('Connected to STOMP Broker!');
+                console.log('Frame Details:', frame);
+				
+				// 이전 채팅 내역 불러오기 API 호출
+		        // fetchHistory(userId);
+
+                document.getElementById('loginArea').style.display = 'none';
+
+                // 1. 본인의 개인 채널 구독 (중복 구독 방지를 위해 변수에 할당)
+                if (currentSubscription) currentSubscription.unsubscribe();
+                currentSubscription = stompClient.subscribe('/sub/chat/room/' + userId, function (chat) {
+                    const msgBody = JSON.parse(chat.body);
+                    showGreeting(msgBody);
+                });
+
+                // 2. 전체 공지 채널 구독
+                stompClient.subscribe('/sub/chat/room/ALL', function (chat) {
+                    showGreeting(JSON.parse(chat.body));
+                });
+
+                // 접속 알림 메시지 (선택 사항)
+                console.log(userId + "님이 접속했습니다.");
+            }, function(error) {
+                alert("연결 오류: " + error);
+            });
+        }
+
+        function sendMessage() {
+            const userId = document.getElementById('userId').value;
+            const msgInput = document.getElementById('message');
+            const msg = msgInput.value;
+
+            if(!msg || !stompClient) return;
+
+            // 메시지 전송
+            stompClient.send("/pub/chat/message", {}, JSON.stringify({
+                type: 'TALK', 
+                roomId: userId, 
+                sender: userId, 
+                message: msg, 
+                isBotMode: isBotMode
+            }));
+            
+            msgInput.value = '';
+        }
+
+        function callAgent() {
+            const userId = document.getElementById('userId').value;
+            stompClient.send("/pub/chat/message", {}, JSON.stringify({
+                type: 'CALL_AGENT', 
+                roomId: userId, 
+                sender: userId, 
+                message: "상담사 연결을 원합니다."
+            }));
+            alert("상담사를 호출했습니다.");
+            document.getElementById('callAgentBtn').disabled = true; // 중복 호출 방지
+        }
+
+        function showGreeting(message) {
+            const chatArea = document.getElementById('chatArea');
+            
+            // 상태 전환 처리
+            if(message.type === 'ACCEPT') {
+                isBotMode = false;
+                alert("상담사가 연결되었습니다.");
+            } else if(message.type === 'TO_BOT') {
+                isBotMode = true; // 봇 모드로 강제 전환
+                document.getElementById('callAgentBtn').disabled = false; // 상담사 호출 버튼 다시 활성화
+				alert("일정 시간 응답이 없어 상담사 연결이 종료되었습니다.");
+            }
+            
+            // 화면 출력
+            const msgDiv = document.createElement('div');
+            msgDiv.style.padding = "5px";
+            msgDiv.style.borderBottom = "1px solid #eee";
+            msgDiv.innerHTML = `<strong>${message.sender}:</strong> ${message.message}`;
+            chatArea.appendChild(msgDiv);
+            
+            // 스크롤 하단 이동
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+    </script>
+</body>
+</html>

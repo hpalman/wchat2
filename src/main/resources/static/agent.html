@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <title>WCHAT - 상담사 관리 콘솔</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <!--<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>-->
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.js"></script>
+</head>
+<body style="font-family: sans-serif; padding: 20px;">
+    <h2>🎧 상담사 시스템</h2>
+    <div id="loginArea">
+        <input type="text" id="agentId" placeholder="상담사 성함/ID 입력">
+        <button onclick="connect()">상담사 로그인</button>
+    </div>
+
+    <div id="mainConsole" style="display:none; margin-top: 20px;">
+        <div style="display: flex; gap: 30px;">
+            <div style="flex: 1; border: 1px solid #ddd; padding: 15px; border-radius: 8px;">
+                <h3 style="color: #e67e22;">🔔 연결 요청 (대기열)</h3>
+                <ul id="requestList" style="list-style: none; padding: 0;"></ul>
+            </div>
+
+            <div style="flex: 2; border: 1px solid #ddd; padding: 15px; border-radius: 8px;">
+                <h3>💬 활성 채팅: <span id="activeCustomer" style="color: #2980b9;">없음</span></h3>
+                <div id="chatArea" style="height: 350px; overflow-y: scroll; background: #f4f7f6; padding: 10px; margin-bottom: 10px; border: 1px solid #eee;"></div>
+                <input type="text" id="message" style="width: 70%; padding: 8px;" placeholder="메시지를 입력하세요..." onkeypress="if(event.keyCode==13) sendMessage()">
+                <button onclick="sendMessage()" style="padding: 8px 15px;">전송</button>
+                <button onclick="backToBot()" style="padding: 8px 15px; background: #95a5a6; color: white; border: none;">상담 종료(봇 전환)</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let stompClient = null;
+        let currentCustId = null;
+        let agentName = "";
+
+        function connect() {
+            agentName = document.getElementById('agentId').value;
+            if(!agentName) return alert("ID를 입력하세요.");
+
+            const socket = new SockJS('/ws-chat');
+            stompClient = Stomp.over(socket);
+
+            stompClient.connect({}, function (frame) {
+                console.log('Connected: ' + frame);
+                document.getElementById('loginArea').style.display = 'none';
+                document.getElementById('mainConsole').style.display = 'block';
+
+                // [중요] 모든 상담사가 듣는 알림 채널 구독
+                stompClient.subscribe('/sub/chat/agents', function (payload) {
+                    const msg = JSON.parse(payload.body);
+                    console.log("알림 수신:", msg);
+                    if(msg.type === 'CALL_AGENT') {
+                        addRequestToList(msg.sender);
+                    }
+                });
+
+                // 관리자 공지 채널 구독
+                stompClient.subscribe('/sub/chat/room/ALL', function (payload) {
+                    showChat(JSON.parse(payload.body));
+                });
+
+            }, function(err) { alert("연결 실패: " + err); });
+        }
+
+        function addRequestToList(custId) {
+            const list = document.getElementById('requestList');
+            // 이미 목록에 있으면 중복 추가 방지
+            if (document.getElementById('btn-' + custId)) return;
+
+            const li = document.createElement('li');
+            li.id = 'li-' + custId;
+            li.style.cssText = "padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;";
+            li.innerHTML = `
+                <span><strong>${custId}</strong> 고객님</span>
+                <button id="btn-${custId}" onclick="acceptChat('${custId}')" style="background: #27ae60; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">연결 수락</button>
+            `;
+            list.appendChild(li);
+        }
+
+        function acceptChat(custId) {
+            currentCustId = custId;
+            document.getElementById('activeCustomer').innerText = custId;
+            
+            // 해당 고객 전용 채널 구독 (이전 대화 및 실시간 메시지 수신용)
+            stompClient.subscribe('/sub/chat/room/' + custId, function (payload) {
+                showChat(JSON.parse(payload.body));
+            });
+
+            // 고객에게 수락 메시지 전송
+            const acceptMsg = {
+                type: 'ACCEPT',
+                roomId: custId,
+                sender: '상담사(' + agentName + ')',
+                message: "안녕하세요. 상담사 " + agentName + "입니다. 무엇을 도와드릴까요?",
+                isBotMode: false
+            };
+            stompClient.send("/pub/chat/message", {}, JSON.stringify(acceptMsg));
+
+            // 대기열 아이템 제거
+            const item = document.getElementById('li-' + custId);
+            if(item) item.remove();
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('message');
+            if(!currentCustId || !input.value) return;
+
+            stompClient.send("/pub/chat/message", {}, JSON.stringify({
+                type: 'TALK',
+                roomId: currentCustId,
+                sender: '상담사',
+                message: input.value,
+                isBotMode: false
+            }));
+            input.value = '';
+        }
+
+        function backToBot() {
+            if(!currentCustId) return;
+            stompClient.send("/pub/chat/message", {}, JSON.stringify({
+                type: 'TO_BOT',
+                roomId: currentCustId,
+                sender: '시스템',
+                message: "상담이 종료되었습니다. 다시 봇이 응대해 드립니다.",
+                isBotMode: true
+            }));
+            currentCustId = null;
+            document.getElementById('activeCustomer').innerText = "없음";
+            document.getElementById('chatArea').innerHTML = "";
+        }
+
+        function showChat(message) {
+            const chatArea = document.getElementById('chatArea');
+            const div = document.createElement('div');
+            div.style.marginBottom = "10px";
+            div.innerHTML = `<span style="font-weight:bold; color:#2c3e50;">${message.sender}:</span> <span>${message.message}</span>`;
+            chatArea.appendChild(div);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+    </script>
+</body>
+</html>
