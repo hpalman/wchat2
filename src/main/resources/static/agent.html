@@ -23,10 +23,11 @@
 
             <div style="flex: 2; border: 1px solid #ddd; padding: 15px; border-radius: 8px;">
                 <h3>💬 활성 채팅: <span id="activeCustomer" style="color: #2980b9;">없음</span></h3>
-                <div id="chatArea" style="height: 350px; overflow-y: scroll; background: #f4f7f6; padding: 10px; margin-bottom: 10px; border: 1px solid #eee;"></div>
+                <div id="chatArea" style="height: 175px; overflow-y: scroll; background: #f4f7f6; padding: 10px; margin-bottom: 10px; border: 1px solid #eee;"></div>
                 <input type="text" id="message" style="width: 70%; padding: 8px;" placeholder="메시지를 입력하세요..." onkeypress="if(event.keyCode==13) sendMessage()">
                 <button onclick="sendMessage()" style="padding: 8px 15px;">전송</button>
                 <button onclick="backToBot()" style="padding: 8px 15px; background: #95a5a6; color: white; border: none;">상담 종료(봇 전환)</button>
+                <button onclick="disconnect()" style="padding: 8px 15px; background: #e74c3c; color: white; border: none; margin-left: 5px;">연결 종료</button>
             </div>
         </div>
     </div>
@@ -140,6 +141,22 @@
             chatArea.appendChild(div);
             chatArea.scrollTop = chatArea.scrollHeight;
         }
+        function disconnect() {
+            if(stompClient !== null) {
+                if(currentCustId) {
+                    // 현재 상담 중인 고객이 있으면 봇으로 전환
+                    backToBot();
+                }
+                stompClient.disconnect();
+                stompClient = null;
+                alert("연결이 종료되었습니다.");
+                document.getElementById('mainConsole').style.display = 'none';
+                document.getElementById('loginArea').style.display = 'block';
+                document.getElementById('chatArea').innerHTML = "";
+                document.getElementById('activeCustomer').innerText = "없음";
+                currentCustId = null;
+            }
+        }        
     </script>
 </body>
 </html>

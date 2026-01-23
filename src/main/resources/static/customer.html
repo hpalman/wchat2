@@ -14,10 +14,11 @@
         <button onclick="connect()">채팅 접속</button>
     </div>
     <hr>
-    <div id="chatArea" style="height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; background: #fafafa;"></div>
+    <div id="chatArea" style="height: 150px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; background: #fafafa;"></div>
     <input type="text" id="message" style="width: 70%;" placeholder="메시지를 입력하세요..." onkeypress="if(event.keyCode==13) sendMessage()">
     <button onclick="sendMessage()">전송</button>
     <button id="callAgentBtn" onclick="callAgent()" style="color: red; font-weight: bold;">상담사 연결 요청</button>
+    <button onclick="disconnect()" style="padding: 8px 15px; background: #e74c3c; color: white; border: none; margin-left: 5px;">연결 종료</button>    
 
     <script>
         let stompClient = null;
@@ -121,6 +122,21 @@
             // 스크롤 하단 이동
             chatArea.scrollTop = chatArea.scrollHeight;
         }
+        function disconnect() {
+            if(stompClient !== null) {
+                if(currentSubscription) {
+                    currentSubscription.unsubscribe();
+                    currentSubscription = null;
+                }
+                stompClient.disconnect();
+                stompClient = null;
+                isBotMode = true;
+                alert("연결이 종료되었습니다.");
+                document.getElementById('loginArea').style.display = 'block';
+                document.getElementById('chatArea').innerHTML = "";
+                document.getElementById('callAgentBtn').disabled = false;
+            }
+        }        
     </script>
 </body>
 </html>
